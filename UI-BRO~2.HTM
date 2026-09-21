@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UI Variant Browser + Firebase</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.0/firebase-storage.js"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    .header {
+      background: white;
+      padding: 20px;
+      border-bottom: 1px solid #ddd;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .header h1 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+
+    .status-bar {
+      font-size: 12px;
+      color: #666;
+      margin-bottom: 15px;
+      padding: 8px 12px;
+      background: #f0f0f0;
+      border-radius: 4px;
+    }
+
+    .status-bar.online {
+      background: #e8f5e9;
+      color: #2e7d32;
+    }
+
+    .status-bar.offline {
+      background: #ffebee;
+      color: #c62828;
+    }
+
+    .upload-area {
+      border: 2px dashed #999;
+      border-radius: 8px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: #fafafa;
+    }
+
+    .upload-area:hover {
+      border-color: #333;
+      background: #f0f0f0;
+    }
+
+    .upload-area.dragover {
+      border-color: #0066cc;
+      background: #e6f2ff;
+    }
+
+    .upload-area input {
+      display: none;
+    }
+
+    .upload-text {
+      font-size: 14px;
+      color: #666;
+    }
+
+    .container {
+      display: flex;
+      height: 100vh;
+      flex-direction: column;
+    }
+
+    .tabs-container {
+      background: white;
+      border-bottom: 1px solid #ddd;
+      display: flex;
+      gap: 0;
+      overflow-x: auto;
+      flex-shrink: 0;
+    }
+
+    .tab-button {
+      padding: 12px 16px;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 14px;
+      border-bottom: 3px solid transparent;
+      white-space: nowrap;
+      color: #666;
+      transition: all 0.2s;
+    }
+
+    .tab-button:hover {
+      background: #f5f5f5;
+      color: #333;
+    }
+
+    .tab-button.active {
+      color: #0066cc;
+      border-bottom-color: #0066cc;
+    }
+
+    .tab-button.close-btn {
+      padding: 12px 8px;
+      color: #999;
+      font-size: 18px;
+    }
+
+    .tab-button.close-btn:hover {
+      color: #d32f2f;
+    }
+
+    .viewer-area {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      background: white;
+      position: relative;
+    }
+
+    .viewer-area.empty {
+      color: #999;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .loading-spinner {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      display: none;
+    }
+
+    .loading-spinner.show {
+      display: block;
+    }
+
+    .spin {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #ddd;
+      border-top-color: #0066cc;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .error {
+      color: #d32f2f;
+      padding: 10px;
+      background: #ffebee;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+
+    .success {
+      color: #2e7d32;
+      padding: 10px;
+      background: #e8f5e9;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      margin-left: 8px;
+    }
+
+    .badge.cloud {
+      background: #e3f2fd;
+      color: #0047ff;
+    }
+
+    .badge.local {
+      background: #f3e5f5;
+      color: #7b1fa2;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🔥 UI Variant Browser + Firebase</h1>
+      <div class="status-bar online" id="statusBar">
+        🟢 Connected to Firebase
+      </div>
+      <div class="upload-area" id="uploadArea">
+        <input type="file" id="fileInput" accept=".html,.zip" multiple>
+        <p class="upload-text">
+          <strong>Drag & drop ZIP files or HTML files here</strong> หรือ click เพื่อเลือกไฟล์
+        </p>
+        <div id="message"></div>
+      </div>
+    </div>
+
+    <div class="tabs-container" id="tabsContainer"></div>
+
+    <div class="viewer-area" id="viewerArea">
+      <div class="loading-spinner" id="loadingSpinner">
+        <div class="spin"></div>
+      </div>
+      <div class="empty">โยนไฟล์ ZIP เข้าไป เลือก variant ที่ต้องการดู</div>
+    </div>
+  </div>
+
+  <script type="module">
+    // ===== FIREBASE CONFIG =====
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+    import { getFirestore, collection, getDocs, orderBy, query, addDoc, updateDoc, deleteDoc, where, doc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBLXGw2Ki7D5kThM6yRER5vnNw1BJt2lhM",
+      authDomain: "uitest-7ef8d.firebaseapp.com",
+      projectId: "uitest-7ef8d",
+      storageBucket: "uitest-7ef8d.firebasestorage.app",
+      messagingSenderId: "225360128099",
+      appId: "1:225360128099:web:cf30f6494d465d0a57b056",
+      measurementId: "G-G4SJTMGQ60"
+    };
+
+    // Initialize Firebase
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    // ===== STATE =====
+    let variants = {};
+    let currentVariant = null;
+    const statusBar = document.getElementById('statusBar');
+
+    // ===== FIREBASE: โหลด variants จาก Firestore =====
+    async function loadVariantsFromCloud() {
+      try {
+        const q = query(collection(db, 'variants'), orderBy('createdAt', 'desc'));
+        const snapshot = await getDocs(q);
+        snapshot.forEach(doc => {
+          const data = doc.data();
+          variants[data.name] = {
+            html: data.htmlContent,
+            url: data.url,
+            source: 'cloud',
+            docId: doc.id
+          };
+        });
+        updateTabs();
+        statusBar.className = 'status-bar online';
+        statusBar.textContent = '🟢 Connected to Firebase';
+      } catch (error) {
+        console.error('Error loading from Firebase:', error);
+        statusBar.className = 'status-bar offline';
+        statusBar.textContent = '🔴 Offline (ใช้ variants local)';
+      }
+    }
+
+    // โหลดทันทีเปิดหน้า
+    loadVariantsFromCloud();
+
+    // ===== LOCAL: Upload area events =====
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const message = document.getElementById('message');
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      handleFiles(e.dataTransfer.files);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      handleFiles(e.target.files);
+    });
+
+    fileInput.setAttribute('accept', '.zip,.html');
+
+    // ===== LOCAL: Handle file upload =====
+    async function handleFiles(files) {
+      message.innerHTML = '';
+
+      for (const file of files) {
+        try {
+          // Handle HTML files
+          if (file.name.endsWith('.html')) {
+            const htmlContent = await file.text();
+            const variantName = file.name.replace('.html', '');
+
+            await saveToFirebase(variantName, htmlContent);
+
+            variants[variantName] = {
+              html: htmlContent,
+              source: 'local'
+            };
+
+            message.innerHTML += `<div class="success">✅ ${variantName} uploaded to cloud</div>`;
+            continue;
+          }
+
+          // Handle ZIP files
+          if (file.name.endsWith('.zip')) {
+            const zip = new JSZip();
+            const content = await zip.loadAsync(file);
+
+            let htmlFile = content.file('index.html');
+            if (!htmlFile) {
+              const htmlFiles = Object.keys(content.files).filter(f => f.endsWith('.html'));
+              if (htmlFiles.length > 0) {
+                htmlFile = content.file(htmlFiles[0]);
+              }
+            }
+
+            if (!htmlFile) {
+              message.innerHTML += `<div class="error">❌ ${file.name} ไม่มี HTML</div>`;
+              continue;
+            }
+
+            const htmlContent = await htmlFile.async('string');
+            const variantName = file.name.replace('.zip', '');
+
+            await saveToFirebase(variantName, htmlContent);
+
+            variants[variantName] = {
+              html: htmlContent,
+              source: 'local'
+            };
+
+            message.innerHTML += `<div class="success">✅ ${variantName} uploaded to cloud</div>`;
+          } else {
+            message.innerHTML += `<div class="error">❌ ${file.name} ต้องเป็น .html หรือ .zip</div>`;
+          }
+
+        } catch (error) {
+          message.innerHTML += `<div class="error">❌ Error: ${error.message}</div>`;
+        }
+      }
+
+      updateTabs();
+    }
+
+    // ===== FIREBASE: Save to Firestore =====
+    async function saveToFirebase(variantName, htmlContent) {
+      try {
+        const q = query(collection(db, 'variants'), where('name', '==', variantName));
+        const existing = await getDocs(q);
+
+        if (!existing.empty) {
+          const docRef = existing.docs[0].ref;
+          await updateDoc(docRef, {
+            htmlContent: htmlContent,
+            updatedAt: new Date()
+          });
+        } else {
+          await addDoc(collection(db, 'variants'), {
+            name: variantName,
+            htmlContent: htmlContent,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
+      } catch (error) {
+        console.error('Error saving to Firebase:', error);
+        throw error;
+      }
+    }
+
+    // ===== FIREBASE: Delete from Firestore =====
+    async function deleteFromFirebase(docId) {
+      try {
+        const docRef = doc(db, 'variants', docId);
+        await deleteDoc(docRef);
+      } catch (error) {
+        console.error('Error deleting from Firebase:', error);
+      }
+    }
+
+    // ===== UI: Update tabs =====
+    function updateTabs() {
+      const tabsContainer = document.getElementById('tabsContainer');
+      tabsContainer.innerHTML = '';
+
+      Object.keys(variants).forEach(name => {
+        const v = variants[name];
+        const btn = document.createElement('button');
+        btn.className = 'tab-button';
+        btn.innerHTML = name + `<span class="badge ${v.source === 'cloud' ? 'cloud' : 'local'}">${v.source}</span>`;
+        btn.onclick = () => showVariant(name);
+
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'tab-button close-btn';
+        closeBtn.textContent = '×';
+        closeBtn.onclick = async (e) => {
+          e.stopPropagation();
+          if (v.docId) await deleteFromFirebase(v.docId);
+          delete variants[name];
+          updateTabs();
+          if (currentVariant === name) {
+            currentVariant = null;
+            showEmpty();
+          }
+        };
+
+        const wrapper = document.createElement('div');
+        wrapper.style.display = 'flex';
+        wrapper.style.alignItems = 'center';
+        wrapper.appendChild(btn);
+        wrapper.appendChild(closeBtn);
+        tabsContainer.appendChild(wrapper);
+
+        if (!currentVariant) {
+          currentVariant = name;
+          btn.classList.add('active');
+          showVariant(name);
+        }
+      });
+    }
+
+    function showVariant(name) {
+      if (!variants[name]) return;
+
+      currentVariant = name;
+
+      document.querySelectorAll('.tab-button').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.target.closest('button').classList.add('active');
+
+      const viewerArea = document.getElementById('viewerArea');
+      viewerArea.innerHTML = '';
+      viewerArea.classList.remove('empty');
+
+      const iframe = document.createElement('iframe');
+      iframe.srcdoc = variants[name].html;
+      viewerArea.appendChild(iframe);
+    }
+
+    function showEmpty() {
+      const viewerArea = document.getElementById('viewerArea');
+      viewerArea.innerHTML = '<div class="empty">โยนไฟล์ ZIP เข้าไป เลือก variant ที่ต้องการดู</div>';
+      viewerArea.classList.add('empty');
+    }
+  </script>
+</body>
+</html>
